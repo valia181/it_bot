@@ -1,0 +1,8 @@
+# Corporate IT Support AI Chatbot (MVP) Dependencies
+# Compliant with SRS-ITBOT-2026-001 and Section 6 Design Constraints
+
+google-genai>=0.1.0
+python-telegram-bot>=21.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+pytest>=8.0.0
