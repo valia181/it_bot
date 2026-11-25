@@ -1,5 +1,5 @@
 """
-TKT-011 Telegram adapter tests.
+TKT-011 adapter implementation tests and TKT-012 interface verification.
 
 The real SessionManager, AdversarialGuardrail, InvertedIndex, GeminiClient,
 and ChatOrchestrator are exercised. Fakes are limited to external Telegram
@@ -101,15 +101,15 @@ def make_update(chat_id, *, text=None, **attachments):
 
 
 @pytest.mark.parametrize("command", ["start", "reset"])
-def test_tkt_011_start_and_reset_clear_history_and_send_ukrainian_welcome(
+def test_tkt_012_start_and_reset_clear_history_and_send_ukrainian_welcome(
     adapter_and_transport, command
 ):
     """
-    TKT-011 | REQ-F-001 | AC-F-001 | BDD Scenario 1:
+    TKT-012 | REQ-F-001 | AC-F-001, AC-NF-006 | BDD Scenario 1:
     /start and /reset clear the sender's history and invite them to ask an IT question.
     """
     adapter, context, bot, session_manager, _, _ = adapter_and_transport
-    chat_id = 81001
+    chat_id = 1001
     session_manager.add_turn(chat_id.__str__(), DialogueRole.USER, "Не працює принтер")
     session_manager.add_turn(chat_id.__str__(), DialogueRole.ASSISTANT, "Перевірте принтер.")
 
@@ -123,9 +123,9 @@ def test_tkt_011_start_and_reset_clear_history_and_send_ukrainian_welcome(
     assert any(word in bot.messages[0]["text"].lower() for word in ("іт", "пит", "проблем"))
 
 
-def test_tkt_011_help_sends_ukrainian_text_hint_without_clearing_session(adapter_and_transport):
+def test_tkt_012_help_sends_ukrainian_text_hint_without_clearing_session(adapter_and_transport):
     """
-    TKT-011 | REQ-F-001 | AC-F-001 | BDD Scenario 1:
+    TKT-012 | REQ-F-001 | AC-F-001, AC-NF-006 | BDD Scenario 1:
     /help gives a text-usage hint and leaves existing session turns unchanged.
     """
     adapter, context, bot, session_manager, _, _ = adapter_and_transport
@@ -154,14 +154,24 @@ def test_tkt_011_help_sends_ukrainian_text_hint_without_clearing_session(adapter
     ],
     ids=["photo", "sticker", "voice", "video", "audio", "document"],
 )
-def test_tkt_011_non_text_payload_rejected_before_core_processing(adapter_and_transport, payload):
+def test_tkt_012_non_text_payload_rejected_before_core_processing(
+    adapter_and_transport, payload, monkeypatch
+):
     """
-    TKT-011 | REQ-F-002 | AC-F-002 | BDD Scenario 7:
+    TKT-012 | REQ-F-002 | REQ-NF-006 | AC-F-002, AC-NF-006 | BDD Scenario 7:
     Reject each supported non-text Telegram payload with the contract's
     NON_TEXT_PAYLOAD_UNSUPPORTED notice before core search or Gemini processing.
     """
-    adapter, context, bot, session_manager, _, api_state = adapter_and_transport
+    adapter, context, bot, session_manager, search_engine, api_state = adapter_and_transport
     chat_id = 81003
+    original_search = search_engine.search
+    search_calls = []
+
+    def search_spy(query):
+        search_calls.append(query)
+        return original_search(query)
+
+    monkeypatch.setattr(search_engine, "search", search_spy)
 
     asyncio.run(adapter.handle_message(make_update(chat_id, **payload), context))
 
@@ -169,13 +179,14 @@ def test_tkt_011_non_text_payload_rejected_before_core_processing(adapter_and_tr
     assert bot.messages[0]["chat_id"] == chat_id
     assert any(character in bot.messages[0]["text"] for character in "іїєґ")
     assert "текст" in bot.messages[0]["text"].lower()
+    assert search_calls == []
     assert api_state["calls"] == []
     assert session_manager.get_active_session_count() == 0
 
 
-def test_tkt_011_text_is_routed_to_real_orchestrator_and_replied(adapter_and_transport):
+def test_tkt_012_text_is_routed_to_real_orchestrator_and_replied(adapter_and_transport):
     """
-    TKT-011 | REQ-F-007..REQ-F-011 | REQ-NF-008 | AC-F-001 | AC-NF-008:
+    TKT-012 | REQ-NF-008 | AC-NF-008:
     UTF-8 Ukrainian text is processed by the real core using str(chat_id).
     """
     adapter, context, bot, session_manager, _, api_state = adapter_and_transport
@@ -195,9 +206,9 @@ def test_tkt_011_text_is_routed_to_real_orchestrator_and_replied(adapter_and_tra
     assert session.turns[0].content == query
 
 
-def test_tkt_011_rejects_text_above_openapi_message_limit(adapter_and_transport):
+def test_tkt_012_rejects_text_above_openapi_message_limit(adapter_and_transport):
     """
-    TKT-011 | REQ-F-002 | OpenAPI /messages:
+    TKT-012 | REQ-F-002 | AC-F-002 | OpenAPI /messages:
     Reject text over the contract's 4000-character maximum before core processing.
     """
     adapter, context, bot, session_manager, _, api_state = adapter_and_transport
@@ -212,9 +223,9 @@ def test_tkt_011_rejects_text_above_openapi_message_limit(adapter_and_transport)
     assert api_state["calls"] == []
 
 
-def test_tkt_011_api_fallback_sends_notice_and_top_three_documents(adapter_and_transport):
+def test_tkt_012_api_fallback_sends_notice_and_top_three_documents(adapter_and_transport):
     """
-    TKT-011 | REQ-F-012 | AC-F-012 | BDD Scenario 8:
+    TKT-012 | REQ-F-012 | REQ-NF-006 | AC-F-012, AC-NF-006 | BDD Scenario 8:
     API_FALLBACK_DOCUMENTS sends the Ukrainian notice and each UTF-8 attachment
     using its original knowledge-base filename.
     """
@@ -249,6 +260,38 @@ def test_tkt_011_api_fallback_sends_notice_and_top_three_documents(adapter_and_t
         == search_engine.kb_reader.read_document(item["filename"]).content.encode("utf-8")
         for item in bot.documents
     )
+
+
+def test_tkt_012_api_outage_with_zero_matches_escalates_without_documents(
+    adapter_and_transport, monkeypatch,
+):
+    """
+    TKT-012 | REQ-F-009, REQ-F-012 | AC-F-012 | BDD Scenario 8:
+    A Gemini outage after a zero-match search escalates to IT support and sends
+    no documents.
+    """
+    adapter, context, bot, _, search_engine, api_state = adapter_and_transport
+    api_state["exception"] = TimeoutError("simulated Gemini timeout")
+    query = "квантовий тостер телепортація"
+    original_search = search_engine.search
+    search_results = []
+
+    def search_spy(search_query):
+        result = original_search(search_query)
+        search_results.append(result)
+        return result
+
+    monkeypatch.setattr(search_engine, "search", search_spy)
+
+    asyncio.run(adapter.handle_message(make_update(81007, text=query), context))
+
+    assert search_results
+    assert all(not result.results for result in search_results)
+    assert len(bot.messages) == 1
+    assert "@corp_it_support" in bot.messages[0]["text"]
+    assert "На жаль" in bot.messages[0]["text"]
+    assert bot.documents == []
+    assert api_state["calls"] == []
 
 
 def test_tkt_011_loads_telegram_token_from_environment_or_dotenv(monkeypatch, tmp_path):
