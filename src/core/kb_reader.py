@@ -107,7 +107,6 @@ class SandboxedKBReader:
         try:
             is_inside = candidate.is_relative_to(self.kb_dir)
         except AttributeError:
-            # Fallback for Python versions prior to is_relative_to
             try:
                 candidate.relative_to(self.kb_dir)
                 is_inside = True
@@ -181,6 +180,19 @@ class SandboxedKBReader:
         """
         return self.read_document(document_id).content
 
+    def list_document_ids(self) -> List[str]:
+        """
+        Enumerate all valid document filenames inside knowledge_base/ without loading bodies.
+
+        Implements TKT-001, TKT-003 | REQ-NF-001, REQ-NF-003, REQ-NF-007
+        :return: List of sorted document filename strings.
+        """
+        return [
+            file_path.name
+            for file_path in sorted(self.kb_dir.iterdir(), key=lambda p: p.name.lower())
+            if file_path.is_file() and file_path.suffix.lower() in _ALLOWED_EXTENSIONS
+        ]
+
     def list_documents(self) -> KnowledgeDocumentListResponse:
         """
         Enumerate all valid .md and .txt instruction files inside knowledge_base/.
@@ -189,24 +201,24 @@ class SandboxedKBReader:
         :return: KnowledgeDocumentListResponse with summaries of all available files.
         """
         summaries: List[KnowledgeDocumentSummary] = []
-        for file_path in sorted(self.kb_dir.iterdir(), key=lambda p: p.name.lower()):
-            if file_path.is_file() and file_path.suffix.lower() in _ALLOWED_EXTENSIONS:
-                content = file_path.read_text(encoding="utf-8")
-                title = self._extract_title(content, file_path.stem)
-                token_count = len(content.split())
-                doc_format = (
-                    DocumentFormat.MD
-                    if file_path.suffix.lower() == ".md"
-                    else DocumentFormat.TXT
+        for doc_id in self.list_document_ids():
+            file_path = self.kb_dir / doc_id
+            content = file_path.read_text(encoding="utf-8")
+            title = self._extract_title(content, file_path.stem)
+            token_count = len(content.split())
+            doc_format = (
+                DocumentFormat.MD
+                if file_path.suffix.lower() == ".md"
+                else DocumentFormat.TXT
+            )
+            summaries.append(
+                KnowledgeDocumentSummary(
+                    document_id=file_path.name,
+                    title=title,
+                    format=doc_format,
+                    token_count=token_count,
                 )
-                summaries.append(
-                    KnowledgeDocumentSummary(
-                        document_id=file_path.name,
-                        title=title,
-                        format=doc_format,
-                        token_count=token_count,
-                    )
-                )
+            )
 
         return KnowledgeDocumentListResponse(
             total_documents=len(summaries),

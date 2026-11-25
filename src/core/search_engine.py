@@ -11,7 +11,7 @@ Features:
 """
 
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import math
 import threading
 import time
@@ -74,8 +74,7 @@ class InvertedIndex:
 
         with self._lock:
             self._status = IndexBuildStatus.BUILDING
-            doc_summaries = self.kb_reader.list_documents().documents
-            doc_ids = [d.document_id for d in doc_summaries]
+            doc_ids = self.kb_reader.list_document_ids()
 
             # Temporary thread-safe build dictionaries
             new_inverted_index: Dict[str, Dict[str, int]] = defaultdict(dict)
@@ -89,10 +88,9 @@ class InvertedIndex:
                     tf_counts[stem] += 1
                 return doc_id, detail.title, tf_counts
 
+            # Process documents across the worker thread pool
             with ThreadPoolExecutor(max_workers=self.worker_threads) as executor:
-                futures = [executor.submit(_process_document, doc_id) for doc_id in doc_ids]
-                for future in as_completed(futures):
-                    doc_id, title, tf_counts = future.result()
+                for doc_id, title, tf_counts in executor.map(_process_document, doc_ids):
                     new_doc_titles[doc_id] = title
                     for stem, count in tf_counts.items():
                         new_inverted_index[stem][doc_id] = count
@@ -142,7 +140,6 @@ class InvertedIndex:
             doc_matched_stems: Dict[str, Set[str]] = defaultdict(set)
 
             # Compute TF-IDF contributions for each query stem
-            # Deduplicate query stems for IDF weighting while accounting for matching terms
             for stem in normalized_stems:
                 if stem in self._inverted_index:
                     doc_tf_map = self._inverted_index[stem]
