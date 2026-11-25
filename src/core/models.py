@@ -1,7 +1,7 @@
 """
 Domain Models and Schema Contracts.
 
-Implements TKT-001, TKT-003 | REQ-NF-001, REQ-F-003, REQ-F-005, REQ-NF-007, REQ-NF-008
+Implements TKT-001, TKT-003, TKT-006 | REQ-NF-001, REQ-F-001, REQ-F-003, REQ-F-005, REQ-F-006, REQ-NF-007, REQ-NF-008
 Strictly aligned with openapi-v2.yaml schemas and components.
 """
 
@@ -25,6 +25,21 @@ class IndexBuildStatus(str, Enum):
 
     READY = "READY"
     BUILDING = "BUILDING"
+
+
+class SessionCommand(str, Enum):
+    """Telegram command that triggered session initialization or reset."""
+
+    START = "/start"
+    RESET = "/reset"
+    HELP = "/help"
+
+
+class DialogueRole(str, Enum):
+    """Participant role in the dialogue turn."""
+
+    USER = "user"
+    ASSISTANT = "assistant"
 
 
 class ApiErrorCode(str, Enum):
@@ -123,6 +138,56 @@ class InvertedIndexStatus(BaseModel):
     unique_stems: int = Field(..., ge=0, description="Total unique normalized stems in the index dictionary")
     build_duration_ms: float = Field(..., ge=0, description="Parallel build time in milliseconds")
     worker_threads: int = Field(..., ge=1, description="Worker thread pool concurrency count")
+
+
+class DialogueTurn(BaseModel):
+    """
+    Single dialogue turn in a user session.
+
+    Implements TKT-006 | REQ-F-006, REQ-NF-006
+    """
+
+    role: DialogueRole = Field(..., description="Participant role in the dialogue turn ('user' or 'assistant')")
+    content: str = Field(..., description="Text content of the turn in Ukrainian")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="UTC timestamp of the turn")
+
+
+class SessionInitRequest(BaseModel):
+    """
+    Request payload to initialize or reset a session.
+
+    Implements TKT-006 | REQ-F-001, REQ-F-006
+    """
+
+    session_id: str = Field(..., min_length=1, max_length=64, description="Unique user chat identifier (Telegram chat_id)")
+    command: Optional[SessionCommand] = Field(default=None, description="Command triggering session initialization")
+
+
+class SessionInitResponse(BaseModel):
+    """
+    Response payload upon session initialization or reset.
+
+    Implements TKT-006 | REQ-F-001, REQ-F-006
+    """
+
+    session_id: str = Field(..., description="Unique user chat identifier")
+    welcome_message: str = Field(..., description="Greeting message in Ukrainian inviting the user to ask an IT question")
+    max_turns: int = Field(default=6, description="Maximum sliding-window capacity in dialogue turns (REQ-F-006)")
+    ttl_seconds: int = Field(default=900, description="Session inactivity expiration timeout in seconds (15 minutes)")
+
+
+class SessionResource(BaseModel):
+    """
+    Active session context state including turns and remaining TTL.
+
+    Implements TKT-006 | REQ-F-006, REQ-NF-004
+    """
+
+    session_id: str = Field(..., description="Unique user chat identifier")
+    turns: List[DialogueTurn] = Field(default_factory=list, max_length=6, description="Active sliding context window")
+    turn_count: int = Field(..., ge=0, le=6, description="Number of turns currently in memory")
+    max_turns: int = Field(default=6, description="Maximum turns allowed")
+    remaining_ttl_seconds: int = Field(..., ge=0, le=900, description="Remaining seconds before automatic TTL eviction")
 
 
 class ErrorDetail(BaseModel):

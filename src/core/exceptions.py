@@ -1,7 +1,7 @@
 """
 Exceptions for Knowledge Base and Security Confinement.
 
-Implements TKT-001 | REQ-NF-001, REQ-NF-006, REQ-NF-007
+Implements TKT-001, TKT-006 | REQ-NF-001, REQ-NF-006, REQ-NF-007, REQ-F-006
 Maps internal exceptions to canonical openapi-v2.yaml ApiErrorCode values.
 """
 
@@ -87,3 +87,33 @@ class DocumentNotFoundError(KnowledgeBaseError):
             ],
         )
         self.document_id = document_id
+
+
+class SessionNotFoundError(KnowledgeBaseError):
+    """
+    Raised when the requested session does not exist or has expired via TTL.
+
+    Implements TKT-006 | REQ-F-006, REQ-NF-006
+    """
+
+    def __init__(
+        self,
+        session_id: str,
+        message: Optional[str] = None,
+        details: Optional[List[ErrorDetail]] = None,
+    ):
+        if message is None:
+            message = f"Сесію '{session_id}' не знайдено або її термін дії вичерпано."
+        super().__init__(
+            message=message,
+            error_code=ApiErrorCode.SESSION_NOT_FOUND,
+            req_id="REQ-F-006",
+            details=details or [
+                ErrorDetail(
+                    field="session_id",
+                    issue=f"Session '{session_id}' was not found or expired via TTL.",
+                    constraint="session exists and remaining_ttl > 0",
+                )
+            ],
+        )
+        self.session_id = session_id
