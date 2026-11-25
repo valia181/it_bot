@@ -1,7 +1,7 @@
 """
 Domain Models and Schema Contracts.
 
-Implements TKT-001, TKT-003, TKT-006 | REQ-NF-001, REQ-F-001, REQ-F-003, REQ-F-005, REQ-F-006, REQ-NF-007, REQ-NF-008
+Implements TKT-001, TKT-003, TKT-006, TKT-007 | REQ-NF-001, REQ-F-001, REQ-F-003, REQ-F-005, REQ-F-006, REQ-F-010, REQ-F-011, REQ-NF-007, REQ-NF-008
 Strictly aligned with openapi-v2.yaml schemas and components.
 """
 
@@ -40,6 +40,16 @@ class DialogueRole(str, Enum):
 
     USER = "user"
     ASSISTANT = "assistant"
+
+
+class QueryClassification(str, Enum):
+    """Outcome category assigned by the query processing pipeline."""
+
+    IN_SCOPE_ANSWER = "IN_SCOPE_ANSWER"
+    CLARIFICATION_NEEDED = "CLARIFICATION_NEEDED"
+    OUT_OF_SCOPE_ESCALATION = "OUT_OF_SCOPE_ESCALATION"
+    SECURITY_HARD_REFUSAL = "SECURITY_HARD_REFUSAL"
+    API_FALLBACK_DOCUMENTS = "API_FALLBACK_DOCUMENTS"
 
 
 class ApiErrorCode(str, Enum):
@@ -102,6 +112,19 @@ class RankedDocumentHit(BaseModel):
     title: str = Field(..., description="Document title")
     tfidf_score: float = Field(..., ge=0.0001, description="Positive TF-IDF relevance score (score > 0)")
     matched_stems: List[str] = Field(default_factory=list, description="List of query stems matching this document")
+
+
+class DocumentAttachment(BaseModel):
+    """
+    Document attachment metadata and raw content delivered during API fallback.
+
+    Implements TKT-008 | REQ-F-012
+    """
+
+    document_id: str = Field(..., description="Filename of the instruction inside knowledge_base/")
+    title: str = Field(..., description="Document title")
+    content: str = Field(..., description="Full text of the instruction file")
+    tfidf_score: float = Field(..., ge=0.0001, description="TF-IDF relevance score")
 
 
 class SearchQueryRequest(BaseModel):
@@ -188,6 +211,22 @@ class SessionResource(BaseModel):
     turn_count: int = Field(..., ge=0, le=6, description="Number of turns currently in memory")
     max_turns: int = Field(default=6, description="Maximum turns allowed")
     remaining_ttl_seconds: int = Field(..., ge=0, le=900, description="Remaining seconds before automatic TTL eviction")
+
+
+class BotMessageResponse(BaseModel):
+    """
+    Standard response delivered by the bot to a user query.
+
+    Implements TKT-007, TKT-008 | REQ-F-007..REQ-F-012, REQ-NF-006
+    """
+
+    session_id: str = Field(..., description="User session identifier")
+    classification: QueryClassification = Field(..., description="Outcome classification")
+    reply_text: str = Field(..., description="Ukrainian response message")
+    context_updated: bool = Field(..., description="False when adversarial query is blocked (REQ-F-011)")
+    matched_documents: List[RankedDocumentHit] = Field(default_factory=list, max_length=3, description="Top-3 matches")
+    attachments: List[DocumentAttachment] = Field(default_factory=list, max_length=3, description="Attachments for fallback")
+    escalation_contact: Optional[str] = Field(default=None, description="Escalation handle (@corp_it_support or None)")
 
 
 class ErrorDetail(BaseModel):
