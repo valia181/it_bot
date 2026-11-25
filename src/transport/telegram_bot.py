@@ -5,12 +5,14 @@ REQ-NF-008.
 """
 
 from io import BytesIO
+import logging
 import os
 from pathlib import Path, PurePath
 from typing import Optional
 
 from dotenv import load_dotenv
 from telegram import Update
+from telegram.error import Conflict
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from src.core.models import ApiErrorCode, QueryClassification, SessionCommand
@@ -26,10 +28,30 @@ INVALID_TEXT_MESSAGE = (
     "Введіть текстове ІТ-питання довжиною від 1 до 4000 символів."
 )
 MAX_TEXT_LENGTH = 4000
+logger = logging.getLogger(__name__)
 
 
 class TelegramBotConfigurationError(RuntimeError):
     """Raised when the live Telegram bot cannot be configured safely."""
+
+
+async def handle_telegram_error(
+    _update: object, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Log Telegram errors and stop polling when another getUpdates client conflicts."""
+    error = context.error
+    if isinstance(error, Conflict):
+        logger.error(
+            "Telegram polling conflict: another client is already calling getUpdates. "
+            "Stopping this bot; ensure only one poller uses this token."
+        )
+        context.application.stop_running()
+        return
+
+    if error is None:
+        logger.error("Unhandled Telegram application error without exception details.")
+        return
+    logger.error("Unhandled Telegram application error.", exc_info=error)
 
 
 def load_telegram_bot_token() -> str:
@@ -175,6 +197,7 @@ def build_telegram_application(
     application.add_handler(
         MessageHandler(filters.ALL & ~filters.COMMAND, adapter.handle_message)
     )
+    application.add_error_handler(handle_telegram_error)
     return application
 
 
@@ -185,6 +208,10 @@ def run_telegram_bot(token: Optional[str] = None) -> None:
         raise TelegramBotConfigurationError(
             "TELEGRAM_BOT_TOKEN must not be empty to start the Telegram bot."
         )
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     build_telegram_application(
         TelegramBotAdapter(), token=resolved_token
     ).run_polling()

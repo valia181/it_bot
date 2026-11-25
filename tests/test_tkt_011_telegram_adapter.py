@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from telegram.error import Conflict
 
 from src.core.gemini_client import GeminiClient
 from src.core.guardrail import AdversarialGuardrail
@@ -22,6 +23,8 @@ from src.core.session_manager import SessionManager
 from src.transport.telegram_bot import (
     TelegramBotAdapter,
     TelegramBotConfigurationError,
+    build_telegram_application,
+    handle_telegram_error,
     load_telegram_bot_token,
     run_telegram_bot,
 )
@@ -329,3 +332,19 @@ def test_tkt_011_live_runner_rejects_missing_telegram_token(monkeypatch, token):
 
     with pytest.raises(TelegramBotConfigurationError, match="TELEGRAM_BOT_TOKEN"):
         run_telegram_bot()
+
+
+def test_tkt_011_polling_conflict_stops_foreground_runner(adapter_and_transport):
+    """TKT-011 | REQ-NF-008: A duplicate getUpdates poller stops this runner cleanly."""
+    adapter = adapter_and_transport[0]
+    application = build_telegram_application(adapter, token="offline-test-token")
+    stopped = []
+    context = SimpleNamespace(
+        error=Conflict("another getUpdates request"),
+        application=SimpleNamespace(stop_running=lambda: stopped.append(True)),
+    )
+
+    assert handle_telegram_error in application.error_handlers
+    asyncio.run(handle_telegram_error(None, context))
+
+    assert stopped == [True]

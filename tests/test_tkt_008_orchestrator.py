@@ -335,6 +335,29 @@ def test_tkt_008_gemini_api_error_on_zero_match_escalates(orchestrator, mock_gem
     assert response.attachments == []
 
 
+def test_tkt_008_gemini_quota_exhaustion_is_logged_and_explained(
+    orchestrator, mock_gemini_client, caplog
+):
+    """REQ-F-012: HTTP 429 reports quota exhaustion while preserving document fallback."""
+
+    class QuotaExceededError(Exception):
+        code = 429
+
+    mock_gemini_client.generate_grounded_response.side_effect = QuotaExceededError()
+
+    with caplog.at_level("ERROR", logger="src.core.orchestrator"):
+        response = orchestrator.process_message(
+            session_id="user_quota_fallback",
+            query="Що робити, якщо в офісі зажувало папір у принтері?",
+        )
+
+    assert response.classification == QueryClassification.API_FALLBACK_DOCUMENTS
+    assert "ліміт запитів" in response.reply_text.lower()
+    assert response.attachments
+    assert "status_code=429" in caplog.text
+    assert "QuotaExceededError" in caplog.text
+
+
 def test_tkt_008_adversarial_guardrail_integration_bdd_scenario_5_and_6(
     orchestrator, mock_gemini_client, session_manager
 ):

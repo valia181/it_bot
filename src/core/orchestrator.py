@@ -8,6 +8,7 @@ AC-NF-005, AC-NF-006, AC-NF-008.
 """
 
 import re
+import logging
 from typing import List, Optional, Tuple
 
 from src.core.exceptions import SessionNotFoundError
@@ -25,6 +26,8 @@ from src.core.models import (
 )
 from src.core.search_engine import InvertedIndex
 from src.core.session_manager import SessionManager
+
+logger = logging.getLogger(__name__)
 
 # Regex patterns indicating vague, broad, or non-specific technical problems
 _PATTERNS_VAGUE_QUERY = [
@@ -66,6 +69,10 @@ class ChatOrchestrator:
     )
     DEFAULT_FALLBACK_MESSAGE: str = (
         "Перепрошую, сервіс штучного інтелекту тимчасово недоступний через технічні неполадки або тайм-аут. "
+        "До відповіді додано відповідні інструкції з бази знань у вигляді файлів."
+    )
+    DEFAULT_QUOTA_FALLBACK_MESSAGE: str = (
+        "Перепрошую, наразі вичерпано ліміт запитів до сервісу штучного інтелекту. "
         "До відповіді додано відповідні інструкції з бази знань у вигляді файлів."
     )
     CLARIFICATION_NETWORK_MESSAGE: str = (
@@ -243,7 +250,16 @@ class ChatOrchestrator:
             # Ensure string type
             if not isinstance(gemini_reply, str):
                 gemini_reply = str(gemini_reply)
-        except Exception:
+        except Exception as exc:
+            status_code = getattr(exc, "code", None) or getattr(
+                exc, "status_code", None
+            )
+            logger.error(
+                "Gemini generation failed (exception=%s, status_code=%s); "
+                "serving knowledge-base fallback.",
+                type(exc).__name__,
+                status_code,
+            )
             # Graceful Fallback on Gemini API Failure (REQ-F-012)
             fallback_attachments: List[DocumentAttachment] = []
             for hit in search_response.results:
@@ -260,7 +276,11 @@ class ChatOrchestrator:
                     )
                 )
 
-            fallback_reply = self.DEFAULT_FALLBACK_MESSAGE
+            fallback_reply = (
+                self.DEFAULT_QUOTA_FALLBACK_MESSAGE
+                if status_code == 429
+                else self.DEFAULT_FALLBACK_MESSAGE
+            )
             self.session_manager.add_turn(session_id, DialogueRole.USER, query)
             self.session_manager.add_turn(session_id, DialogueRole.ASSISTANT, fallback_reply)
             return BotMessageResponse(
