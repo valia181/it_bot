@@ -117,3 +117,30 @@ class SessionNotFoundError(KnowledgeBaseError):
             ],
         )
         self.session_id = session_id
+
+
+class GeminiConfigurationError(KnowledgeBaseError, ValueError):
+    """
+    Raised when GEMINI_API_KEY is missing, empty, or placeholder in environment or .env.
+
+    Implements TKT-008 | REQ-NF-002, REQ-NF-008
+    """
+
+    def __init__(
+        self,
+        message: str = "GEMINI_API_KEY is not configured or missing from environment/.env.",
+        details: Optional[List[ErrorDetail]] = None,
+    ):
+        super().__init__(
+            message=message,
+            error_code=ApiErrorCode.INTERNAL_SERVER_ERROR,
+            req_id="REQ-NF-002",
+            details=details or [
+                ErrorDetail(
+                    field="GEMINI_API_KEY",
+                    issue="API key is missing or set to placeholder value.",
+                    constraint="GEMINI_API_KEY is not None and len(GEMINI_API_KEY) > 0",
+                )
+            ],
+        )
+

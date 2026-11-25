@@ -41,6 +41,7 @@ class InvertedIndex:
         kb_reader: SandboxedKBReader,
         normalizer: TextNormalizer = default_normalizer,
         worker_threads: int = 4,
+        max_workers: Optional[int] = None,
     ):
         """
         Initialize the in-memory inverted index engine.
@@ -51,7 +52,8 @@ class InvertedIndex:
         """
         self.kb_reader = kb_reader
         self.normalizer = normalizer
-        self.worker_threads = max(1, worker_threads)
+        effective_threads = max_workers if max_workers is not None else worker_threads
+        self.worker_threads = max(1, effective_threads)
 
         # Thread synchronization primitive
         self._lock = threading.RLock()
