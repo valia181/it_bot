@@ -1,10 +1,3 @@
-"""
-Domain Models and Schema Contracts.
-
-Implements TKT-001, TKT-003, TKT-006, TKT-007 | REQ-NF-001, REQ-F-001, REQ-F-003, REQ-F-005, REQ-F-006, REQ-F-010, REQ-F-011, REQ-NF-007, REQ-NF-008
-Strictly aligned with openapi-v2.yaml schemas and components.
-"""
-
 from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional
@@ -50,6 +43,18 @@ class QueryClassification(str, Enum):
     OUT_OF_SCOPE_ESCALATION = "OUT_OF_SCOPE_ESCALATION"
     SECURITY_HARD_REFUSAL = "SECURITY_HARD_REFUSAL"
     API_FALLBACK_DOCUMENTS = "API_FALLBACK_DOCUMENTS"
+
+
+class PayloadType(str, Enum):
+    """Supported message payload type from Telegram per openapi-v2.yaml."""
+
+    TEXT = "text"
+    PHOTO = "photo"
+    VOICE = "voice"
+    STICKER = "sticker"
+    DOCUMENT = "document"
+    VIDEO = "video"
+    AUDIO = "audio"
 
 
 class ApiErrorCode(str, Enum):
@@ -211,6 +216,18 @@ class SessionResource(BaseModel):
     turn_count: int = Field(..., ge=0, le=6, description="Number of turns currently in memory")
     max_turns: int = Field(default=6, description="Maximum turns allowed")
     remaining_ttl_seconds: int = Field(..., ge=0, le=900, description="Remaining seconds before automatic TTL eviction")
+
+
+class IncomingMessageRequest(BaseModel):
+    """
+    Incoming user message request schema strictly matching openapi-v2.yaml /messages.
+
+    Implements TKT-008, TKT-011 | REQ-F-002, REQ-F-006, REQ-F-007
+    """
+
+    session_id: str = Field(..., min_length=1, max_length=64, description="Unique user chat identifier")
+    payload_type: PayloadType = Field(..., description="Message payload type (only 'text' supported per REQ-F-002)")
+    text: Optional[str] = Field(default=None, max_length=4096, description="Text body of the incoming query")
 
 
 class BotMessageResponse(BaseModel):

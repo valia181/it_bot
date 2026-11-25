@@ -42,6 +42,9 @@ Desktop.ini
 
 # Logs and runtime artifacts
 *.log
+*.tmp
+*.temp
 logs/
 tmp/
+temp/
 scratch/
