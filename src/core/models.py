@@ -69,6 +69,47 @@ class ApiErrorCode(str, Enum):
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
 
 
+class VerificationCaseCategory(str, Enum):
+    """Control-suite case categories defined by openapi-v2.yaml."""
+
+    IN_SCOPE = "IN_SCOPE"
+    AMBIGUOUS_MULTI_TURN = "AMBIGUOUS_MULTI_TURN"
+    OUT_OF_SCOPE = "OUT_OF_SCOPE"
+    ADVERSARIAL = "ADVERSARIAL"
+    API_FALLBACK = "API_FALLBACK"
+
+
+class VerificationRunRequest(BaseModel):
+    """Request options for the offline verification suite (TKT-014)."""
+
+    include_fallback_simulation: bool = Field(
+        default=True,
+        description="Whether to run the Gemini API failure fallback control.",
+    )
+
+
+class VerificationCaseResult(BaseModel):
+    """Single result row in the automated verification report (TKT-014)."""
+
+    case_id: int = Field(..., ge=1, le=11)
+    category: VerificationCaseCategory
+    question: str
+    expected_classification: QueryClassification
+    actual_classification: QueryClassification
+    actual_response: str
+    passed: bool
+
+
+class VerificationRunReport(BaseModel):
+    """Structured pass/fail report matching openapi-v2.yaml."""
+
+    total_cases: int = Field(..., ge=0)
+    passed_cases: int = Field(..., ge=0)
+    failed_cases: int = Field(..., ge=0)
+    executed_at: datetime
+    results: List[VerificationCaseResult] = Field(default_factory=list)
+
+
 class KnowledgeDocumentSummary(BaseModel):
     """
     Summary representation of a single knowledge base document.
@@ -227,7 +268,12 @@ class IncomingMessageRequest(BaseModel):
 
     session_id: str = Field(..., min_length=1, max_length=64, description="Unique user chat identifier")
     payload_type: PayloadType = Field(..., description="Message payload type (only 'text' supported per REQ-F-002)")
-    text: Optional[str] = Field(default=None, max_length=4096, description="Text body of the incoming query")
+    text: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=4000,
+        description="Text body of the incoming query",
+    )
 
 
 class BotMessageResponse(BaseModel):
